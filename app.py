@@ -1,4 +1,4 @@
-# app.py (Final Version with Debugging Tool)
+# app.py (Final Corrected Version for NameError)
 
 # =================================================================
 # SECTION 1: ALL LIBRARY IMPORTS
@@ -13,8 +13,10 @@ from PIL import Image
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 # =================================================================
-# SECTION 2: DATA LOADING
+# SECTION 2: GLOBAL VARIABLES & DATA LOADING
 # =================================================================
+# We will handle API configuration within the functions themselves.
+
 try:
     print("Loading the knowledge base...")
     df_embedded = pd.read_csv("knowledge_base.csv")
@@ -61,14 +63,15 @@ def answer_question(question, dataframe):
     relevant_page_info = find_relevant_page(question, dataframe)
     context = relevant_page_info['text_for_search']
     source_page = relevant_page_info['page_number']
-    prompt = f"Answer based ONLY on the source material: {question}\n\nSource: {context}"
+    
+    prompt = f"Answer the following question based ONLY on the provided source material.\n\nQuestion: {question}\n\nSource Material:\n{context}"
     response = model.generate_content(prompt)
     return f"{response.text}\n\n(Source: Page {source_page})"
 
 def analyze_handwritten_image(image, instruction):
     """Analyzes an uploaded image based on user instructions."""
     model = genai.GenerativeModel('gemini-pro-vision')
-    prompt = f"Analyze the handwritten work in the image based on this instruction: \"{instruction}\""
+    prompt = f"You are an AI Teacher. Analyze the handwritten work in the image based on this instruction: \"{instruction}\""
     response = model.generate_content([prompt, image])
     return response.text
 
@@ -76,25 +79,24 @@ def analyze_handwritten_image(image, instruction):
 # SECTION 4: THE GRADIO USER INTERFACE
 # =================================================================
 
-def student_interface(text_question, image_upload, handwritten_instruction):
-    """Function to power the student Q&A tab."""
+def student_interface(text_question, image_input, handwritten_instruction):
+    """Function to power the student Q&A tab. It now checks for the API key first."""
     is_configured, message = configure_google_ai()
     if not is_configured:
-        return message # Return the specific error message to the user.
+        return message
     
     if not is_knowledge_base_loaded:
         return "ERROR: The knowledge base file ('knowledge_base.csv') is not loaded."
     
-    if image_upload is not None:
+    if image_input is not None:
         if not handwritten_instruction:
             return "Please provide an instruction for the uploaded image."
-        return analyze_handwritten_image(image_upload, handwritten_instruction)
+        return analyze_handwritten_image(image_input, handwritten_instruction)
     elif text_question:
         return answer_question(text_question, df_embedded)
     else:
         return "Please type a question or upload an image with an instruction."
 
-# --- NEW: Debugging function ---
 def check_environment():
     """This function checks the environment and returns a diagnostic message."""
     api_key = os.environ.get("GOOGLE_API_KEY")
@@ -102,9 +104,7 @@ def check_environment():
         key_status = f"SUCCESS: Found the GOOGLE_API_KEY secret. It starts with '{api_key[:4]}' and ends with '{api_key[-4:]}'."
     else:
         key_status = "FAILURE: The GOOGLE_API_KEY secret was NOT found in the environment."
-        
     is_configured, config_message = configure_google_ai()
-    
     return f"--- System Status ---\n\n1. API Key Secret Check:\n{key_status}\n\n2. Google AI Library Configuration Check:\n{config_message}"
 
 # We define the UI using Gradio Blocks.
@@ -114,34 +114,31 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
     with gr.Tabs():
         # --- Student Q&A Tab ---
         with gr.TabItem("Student Q&A"):
-            # (UI code remains the same)
+            gr.Markdown("## Ask a Question")
             with gr.Row():
                 with gr.Column(scale=2):
                     text_input = gr.Textbox(label="Type your question here...")
+                    # The component is defined here as 'image_input'
                     image_input = gr.Image(type="pil", label="Or upload an image of your homework")
                     instruction_input = gr.Textbox(label="If uploading an image, what should I do?", placeholder="e.g., 'Solve for x'")
                     ask_button = gr.Button("Submit", variant="primary")
                 with gr.Column(scale=3):
                     qa_output = gr.Textbox(label="AI Teacher's Answer", lines=20, interactive=False)
-            ask_button.click(fn=student_interface, inputs=[text_input, image_upload, instruction_input], outputs=qa_output)
-
-        # --- NEW: Debugging Tab ---
-        with gr.TabItem("Debug Info"):
-            gr.Markdown("## System Environment Check")
-            gr.Markdown("If you are facing issues, click the button below to check the system status.")
-            debug_button = gr.Button("Check Environment")
-            debug_output = gr.Textbox(label="System Status", lines=10, interactive=False)
             
-            debug_button.click(
-                fn=check_environment,
-                inputs=[],
-                outputs=debug_output
+            # --- KEY CHANGE: The typo is corrected here ---
+            # We now correctly use 'image_input' to match the component's definition.
+            ask_button.click(
+                fn=student_interface,
+                inputs=[text_input, image_input, instruction_input],
+                outputs=qa_output
             )
 
-        # --- Teacher Lecture Mode Tab (Placeholder) ---
-        with gr.TabItem("Teacher Lecture Mode"):
-            gr.Markdown("## Generate an Audio Lecture")
-            gr.Markdown("This feature is under construction.")
+        # --- Debugging Tab ---
+        with gr.TabItem("Debug Info"):
+            gr.Markdown("## System Environment Check")
+            debug_button = gr.Button("Check Environment")
+            debug_output = gr.Textbox(label="System Status", lines=10, interactive=False)
+            debug_button.click(fn=check_environment, inputs=[], outputs=debug_output)
 
 # Launch the app!
 app.launch()
