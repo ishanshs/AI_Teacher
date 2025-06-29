@@ -1,4 +1,4 @@
-# app.py (Final Corrected Version for NameError)
+# app.py (Final Version with launch() fix)
 
 # =================================================================
 # SECTION 1: ALL LIBRARY IMPORTS
@@ -15,8 +15,6 @@ from tenacity import retry, stop_after_attempt, wait_random_exponential
 # =================================================================
 # SECTION 2: GLOBAL VARIABLES & DATA LOADING
 # =================================================================
-# We will handle API configuration within the functions themselves.
-
 try:
     print("Loading the knowledge base...")
     df_embedded = pd.read_csv("knowledge_base.csv")
@@ -79,7 +77,7 @@ def analyze_handwritten_image(image, instruction):
 # SECTION 4: THE GRADIO USER INTERFACE
 # =================================================================
 
-def student_interface(text_question, image_input, handwritten_instruction):
+def student_interface(text_question, image_upload, handwritten_instruction):
     """Function to power the student Q&A tab. It now checks for the API key first."""
     is_configured, message = configure_google_ai()
     if not is_configured:
@@ -88,20 +86,25 @@ def student_interface(text_question, image_input, handwritten_instruction):
     if not is_knowledge_base_loaded:
         return "ERROR: The knowledge base file ('knowledge_base.csv') is not loaded."
     
-    if image_input is not None:
-        if not handwritten_instruction:
-            return "Please provide an instruction for the uploaded image."
-        return analyze_handwritten_image(image_input, handwritten_instruction)
-    elif text_question:
-        return answer_question(text_question, df_embedded)
-    else:
-        return "Please type a question or upload an image with an instruction."
+    try:
+        if image_upload is not None:
+            if not handwritten_instruction:
+                return "Please provide an instruction for the uploaded image."
+            return analyze_handwritten_image(image_upload, handwritten_instruction)
+        elif text_question:
+            return answer_question(text_question, df_embedded)
+        else:
+            return "Please type a question or upload an image with an instruction."
+    except Exception as e:
+        # This catches any unexpected errors during the API calls and reports them clearly.
+        return f"An unexpected error occurred: {e}"
+
 
 def check_environment():
     """This function checks the environment and returns a diagnostic message."""
     api_key = os.environ.get("GOOGLE_API_KEY")
     if api_key:
-        key_status = f"SUCCESS: Found the GOOGLE_API_KEY secret. It starts with '{api_key[:4]}' and ends with '{api_key[-4:]}'."
+        key_status = f"SUCCESS: Found the GOOGLE_API_KEY secret."
     else:
         key_status = "FAILURE: The GOOGLE_API_KEY secret was NOT found in the environment."
     is_configured, config_message = configure_google_ai()
@@ -114,19 +117,15 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
     with gr.Tabs():
         # --- Student Q&A Tab ---
         with gr.TabItem("Student Q&A"):
-            gr.Markdown("## Ask a Question")
             with gr.Row():
                 with gr.Column(scale=2):
                     text_input = gr.Textbox(label="Type your question here...")
-                    # The component is defined here as 'image_input'
                     image_input = gr.Image(type="pil", label="Or upload an image of your homework")
                     instruction_input = gr.Textbox(label="If uploading an image, what should I do?", placeholder="e.g., 'Solve for x'")
                     ask_button = gr.Button("Submit", variant="primary")
                 with gr.Column(scale=3):
                     qa_output = gr.Textbox(label="AI Teacher's Answer", lines=20, interactive=False)
             
-            # --- KEY CHANGE: The typo is corrected here ---
-            # We now correctly use 'image_input' to match the component's definition.
             ask_button.click(
                 fn=student_interface,
                 inputs=[text_input, image_input, instruction_input],
@@ -140,5 +139,12 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
             debug_output = gr.Textbox(label="System Status", lines=10, interactive=False)
             debug_button.click(fn=check_environment, inputs=[], outputs=debug_output)
 
+
 # Launch the app!
-app.launch()
+# --- KEY CHANGE: We add share=True to solve the final launch error. ---
+# It also helps to set a timeout for the server.
+try:
+    app.launch(share=True, server_timeout=600)
+except Exception as e:
+    print(f"Caught exception during app launch: {e}")
+
