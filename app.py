@@ -1,5 +1,8 @@
-# app.py (The Definitive, Final Version)
-import os, json, re, pandas as pd, google.generativeai as genai, gradio as gr
+# app.py (The Definitive Final Version)
+import os
+import pandas as pd
+import google.generativeai as genai
+import gradio as gr
 from PIL import Image
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
@@ -63,3 +66,6 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
                 with gr.Column(scale=3):
                     qa_output = gr.Textbox(label="AI Teacher's Answer", lines=20, interactive=False)
             ask_button.click(fn=student_interface, inputs=[text_input, image_input, instruction_input], outputs=qa_output)
+
+# --- Final, Correct Launch Command ---
+app.launch(server_name="0.0.0.0", server_port=7860)
