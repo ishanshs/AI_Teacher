@@ -1,0 +1,10 @@
+gradio
+gTTS
+mutagen
+google-generativeai
+pandas
+numpy
+pypdf
+pdf2image
+num2words
+tenacity
