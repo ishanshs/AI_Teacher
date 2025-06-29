@@ -1,4 +1,4 @@
-# app.py (Version 2: Text Q&A Restored)
+# app.py (Version 2.1: Typo Corrected)
 
 import os
 import pandas as pd
@@ -59,7 +59,8 @@ def answer_question(question):
     if not is_knowledge_base_loaded:
         return "ERROR: The knowledge base is not loaded. Please check the container logs."
 
-    relevant_page, error = find_relevant_page(question, df_embedded)
+    # THIS IS THE CORRECTED LINE:
+    relevant_page, error = find_relevant_passage(question, df_embedded)
     if error:
         return error # Return any error messages from the helper functions
 
@@ -93,3 +94,4 @@ with gr.Blocks(theme=gr.themes.Soft()) as gradio_app:
 # --- Mount the Gradio app on a FastAPI server ---
 app = fastapi.FastAPI()
 app = gr.mount_gradio_app(app, gradio_app, path="/")
+
