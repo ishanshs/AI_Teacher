@@ -1,2 +1,10 @@
-# AI_Teacher
-An AI powered application for learning
+---
+title: AI Teacher Portal
+emoji: 🤖
+colorFrom: blue
+colorTo: green
+sdk: gradio
+sdk_version: 4.31.0
+app_file: app.py
+pinned: false
+---
