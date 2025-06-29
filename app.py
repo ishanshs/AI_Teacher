@@ -1,11 +1,9 @@
-# app.py (Final Definitive Version)
+# app.py (The Definitive Final Version)
 
 # =================================================================
 # SECTION 1: ALL LIBRARY IMPORTS
 # =================================================================
 import os
-import json
-import re
 import pandas as pd
 import google.generativeai as genai
 import gradio as gr
@@ -78,7 +76,7 @@ def analyze_handwritten_image(image, instruction):
 # =================================================================
 
 def student_interface(text_question, image_upload, handwritten_instruction):
-    """Function to power the student Q&A tab. It now checks for the API key first."""
+    """Function to power the student Q&A tab."""
     is_configured, message = configure_google_ai()
     if not is_configured:
         return message
@@ -108,12 +106,10 @@ def check_environment():
     is_configured, config_message = configure_google_ai()
     return f"--- System Status ---\n\n1. API Key Secret Check:\n{key_status}\n\n2. Google AI Library Configuration Check:\n{config_message}"
 
-# We define the UI using Gradio Blocks.
 with gr.Blocks(theme=gr.themes.Soft()) as app:
     gr.Markdown("# 🤖 AI Teacher Portal")
     
     with gr.Tabs():
-        # --- Student Q&A Tab ---
         with gr.TabItem("Student Q&A"):
             with gr.Row():
                 with gr.Column(scale=2):
@@ -130,7 +126,6 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
                 outputs=qa_output
             )
 
-        # --- Debugging Tab ---
         with gr.TabItem("Debug Info"):
             gr.Markdown("## System Environment Check")
             debug_button = gr.Button("Check Environment")
@@ -138,6 +133,6 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
             debug_button.click(fn=check_environment, inputs=[], outputs=debug_output)
 
 # Launch the app!
-# --- KEY CHANGE: We remove the unsupported 'server_timeout' argument ---
-app.launch()
+# --- KEY CHANGE: Use a robust server launch command for the Docker environment ---
+app.launch(server_name="0.0.0.0", server_port=7860)
 
