@@ -14,6 +14,5 @@ RUN pip install --no-cache-dir --upgrade -r requirements.txt
 COPY . .
 
 # --- THE DEFINITIVE FIX ---
-# Command to run the application using Gradio's official command-line interface.
-# This is the standard way to launch a Gradio app in a Docker container.
-CMD ["gradio", "app.py", "--server_name", "0.0.0.0", "--server_port", "7860"]
+# Command to run the application using python.
+CMD ["python", "app.py"]
