@@ -139,5 +139,5 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
 
 # Launch the app!
 # --- KEY CHANGE: We remove the unsupported 'server_timeout' argument ---
-app.launch(share=True)
+app.launch()
 
