@@ -1,4 +1,4 @@
-# app.py (Final Version with launch() fix)
+# app.py (Final Definitive Version)
 
 # =================================================================
 # SECTION 1: ALL LIBRARY IMPORTS
@@ -96,9 +96,7 @@ def student_interface(text_question, image_upload, handwritten_instruction):
         else:
             return "Please type a question or upload an image with an instruction."
     except Exception as e:
-        # This catches any unexpected errors during the API calls and reports them clearly.
         return f"An unexpected error occurred: {e}"
-
 
 def check_environment():
     """This function checks the environment and returns a diagnostic message."""
@@ -139,12 +137,7 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
             debug_output = gr.Textbox(label="System Status", lines=10, interactive=False)
             debug_button.click(fn=check_environment, inputs=[], outputs=debug_output)
 
-
 # Launch the app!
-# --- KEY CHANGE: We add share=True to solve the final launch error. ---
-# It also helps to set a timeout for the server.
-try:
-    app.launch(share=True, server_timeout=600)
-except Exception as e:
-    print(f"Caught exception during app launch: {e}")
+# --- KEY CHANGE: We remove the unsupported 'server_timeout' argument ---
+app.launch(share=True)
 
