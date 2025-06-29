@@ -63,7 +63,3 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
                 with gr.Column(scale=3):
                     qa_output = gr.Textbox(label="AI Teacher's Answer", lines=20, interactive=False)
             ask_button.click(fn=student_interface, inputs=[text_input, image_input, instruction_input], outputs=qa_output)
-
-# --- Final, Correct Launch Command ---
-# The error log clearly shows that `share=True` is required for this environment.
-app.launch(share=True)
