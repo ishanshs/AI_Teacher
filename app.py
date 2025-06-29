@@ -1,10 +1,11 @@
-# app.py (The Definitive Final Version)
+# app.py (Final Version using FastAPI)
 import os
 import pandas as pd
 import google.generativeai as genai
 import gradio as gr
 from PIL import Image
 from tenacity import retry, stop_after_attempt, wait_random_exponential
+import fastapi
 
 # --- Data Loading ---
 try:
@@ -31,20 +32,19 @@ def embed_with_retry(content, task_type):
     return genai.embed_content(model='models/text-embedding-004', content=content, task_type=task_type)
 
 def answer_question(question, dataframe):
-    is_configured, message = configure_google_ai()
-    if not is_configured: return message
-    # RAG logic here...
+    # This is a placeholder for your actual RAG logic
     return "This is a placeholder answer for your text question."
 
 def analyze_handwritten_image(image, instruction):
-    is_configured, message = configure_google_ai()
-    if not is_configured: return message
-    # Vision model logic here...
+    # This is a placeholder for your actual vision logic
     return "This is a placeholder answer for your image question."
 
 # --- Gradio Interface Definition ---
 def student_interface(text_question, image_upload, handwritten_instruction):
+    is_configured, message = configure_google_ai()
+    if not is_configured: return message
     if not is_knowledge_base_loaded: return "ERROR: Knowledge base not loaded."
+
     if image_upload is not None:
         if not handwritten_instruction: return "Please provide an instruction for the uploaded image."
         return analyze_handwritten_image(image_upload, handwritten_instruction)
@@ -53,7 +53,9 @@ def student_interface(text_question, image_upload, handwritten_instruction):
     else:
         return "Please type a question or upload an image."
 
-with gr.Blocks(theme=gr.themes.Soft()) as app:
+# --- Build the Gradio App (but do not launch it) ---
+gradio_app = gr.Blocks(theme=gr.themes.Soft())
+with gradio_app:
     gr.Markdown("# 🤖 AI Teacher Portal")
     with gr.Tabs():
         with gr.TabItem("Student Q&A"):
@@ -67,5 +69,6 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
                     qa_output = gr.Textbox(label="AI Teacher's Answer", lines=20, interactive=False)
             ask_button.click(fn=student_interface, inputs=[text_input, image_input, instruction_input], outputs=qa_output)
 
-# --- Final, Correct Launch Command ---
-app.launch(server_name="0.0.0.0", server_port=7860)
+# --- THE DEFINITIVE FIX: Create a FastAPI app and mount the Gradio app to it. ---
+app = fastapi.FastAPI()
+app = gr.mount_gradio_app(app, gradio_app, path="/")
