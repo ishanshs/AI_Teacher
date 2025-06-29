@@ -1,4 +1,6 @@
 gradio==4.44.1
+fastapi
+uvicorn
 gTTS
 mutagen
 google-generativeai
