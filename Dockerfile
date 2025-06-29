@@ -13,6 +13,6 @@ RUN pip install --no-cache-dir --upgrade -r requirements.txt
 # Copy the rest of the application code into the container at /code
 COPY . .
 
-# --- THE DEFINITIVE FIX ---
-# Command to run the application using python.
-CMD ["python", "app.py"]
+# --- THE DEFINITIVE FIX: Launch the app with the Uvicorn server ---
+# This tells Uvicorn to find the 'app' object inside the 'app.py' file.
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
