@@ -1,4 +1,4 @@
-# app.py (The Definitive Version with a Tabbed Interface)
+# app.py (The Definitive, Final Version with Flagging Disabled)
 
 import os
 import pandas as pd
@@ -14,11 +14,12 @@ def configure_google_ai():
     """A single, reliable function to configure the API key."""
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key:
+        # Use gr.Error to display a user-friendly error in the Gradio UI
         raise gr.Error("GOOGLE_API_KEY secret not found. Please set it in your Space settings.")
     genai.configure(api_key=api_key)
     print("✅ Google AI API configured successfully.")
 
-# Call configuration at startup. If it fails, the app will stop with a clear error.
+# Call configuration at startup.
 configure_google_ai()
 
 # --- Data Loading ---
@@ -66,17 +67,18 @@ def analyze_handwritten_image(image, instruction):
     return response.text
 
 # --- Gradio Interface Definition ---
-# We create two separate interfaces and combine them with a TabbedInterface.
-# This is the robust way to handle different input types.
 
+# This is the interface for the first tab (Text Q&A)
 text_qa_interface = gr.Interface(
     fn=answer_question_from_text,
     inputs=gr.Textbox(lines=5, placeholder="Type your question about the textbook here..."),
     outputs=gr.Textbox(label="Answer"),
     title="❓ Ask a Question from the Textbook",
-    description="Get answers based on your Class 7 Math book."
+    description="Get answers based on your Class 7 Math book.",
+    allow_flagging=False  # THE FIX: This prevents the app from creating a 'flagged' folder.
 )
 
+# This is the interface for the second tab (Image Q&A)
 image_qa_interface = gr.Interface(
     fn=analyze_handwritten_image,
     inputs=[
@@ -85,7 +87,8 @@ image_qa_interface = gr.Interface(
     ],
     outputs=gr.Textbox(label="Analysis"),
     title="✍️ Get Help with Your Homework",
-    description="Upload a photo of your handwritten work and tell the AI Teacher what to do."
+    description="Upload a photo of your handwritten work and tell the AI Teacher what to do.",
+    allow_flagging=False  # THE FIX: We add it here as well for consistency.
 )
 
 # Combine the two interfaces into a single, clean, tabbed application.
@@ -97,4 +100,3 @@ gradio_app = gr.TabbedInterface(
 # --- Mount the Gradio app on a FastAPI server ---
 app = fastapi.FastAPI()
 app = gr.mount_gradio_app(app, gradio_app, path="/")
-
