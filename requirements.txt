@@ -1,7 +1,6 @@
-gradio==4.44.1
-fastapi
-uvicorn
+streamlit
 google-generativeai
 pandas
 numpy
+pypdf
 tenacity
