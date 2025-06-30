@@ -1,4 +1,4 @@
-# app.py (Version 5: Final Prompt Refinements)
+# app.py (Version 6: Correct Context Gathering)
 
 import os
 import pandas as pd
@@ -44,20 +44,29 @@ def load_resources():
 # Load the resources when the app starts.
 model, df_embedded = load_resources()
 
-# --- Core Logic Functions (with Upgraded Prompts) ---
-def find_relevant_passage(query, dataframe):
-    """Finds the most relevant text chunk from the knowledge base."""
+# --- Core Logic Functions (with Corrected Context Function) ---
+
+# --- THIS IS THE CORRECT, UPGRADED FUNCTION ---
+def find_relevant_context(query, dataframe, k=3):
+    """
+    Finds the top 'k' most relevant text chunks and combines them.
+    """
     query_embedding_response = genai.embed_content(model='models/text-embedding-004', content=query, task_type="RETRIEVAL_QUERY")
     query_embedding = query_embedding_response['embedding']
     dot_products = np.dot(np.stack(dataframe['embedding']), query_embedding)
-    best_passage_index = np.argmax(dot_products)
-    return dataframe.iloc[best_passage_index]
+    
+    # Get the indices of the top 'k' most similar passages.
+    top_k_indices = np.argsort(dot_products)[-k:][::-1]
+    
+    # Combine the text from these chunks into one string.
+    relevant_context = "\n\n---\n\n".join(dataframe.iloc[top_k_indices]['text_for_search'].tolist())
+    return relevant_context
 
 def answer_question_from_text(question, dataframe):
     """Handles the text-based Q&A logic with a refined persona."""
-    context = "\n\n---\n\n".join(find_relevant_passage(question, dataframe, k=3)['text_for_search'].tolist())
+    # --- THIS IS THE CORRECTED FUNCTION CALL ---
+    context = find_relevant_context(question, dataframe, k=3)
     
-    # --- KEY PROMPT UPGRADE: Added negative constraints to prevent robotic responses ---
     prompt = f"""
     **Your Persona:**
     You are a friendly, cheerful, and patient AI Teacher. Imagine you are an older, knowledgeable family member explaining a concept simply and encouragingly. Your goal is to make the student feel supported and confident.
@@ -85,7 +94,6 @@ def analyze_handwritten_image(image, instruction):
     if image is None: return "Please upload an image."
     if not instruction: return "Please provide an instruction for the image."
             
-    # --- KEY PROMPT UPGRADE: Added negative constraints to prevent unwanted summaries ---
     prompt = f"""
     You are an expert AI Teacher. Your task is to follow the user's instruction precisely based on the provided image of their handwritten work.
 
@@ -96,9 +104,8 @@ def analyze_handwritten_image(image, instruction):
     **User's Instruction:** "{instruction}"
     """
     
-    # Use the more powerful Pro model for its superior vision capabilities.
-    vision_model = genai.GenerativeModel('gemini-1.5-pro-latest')
-    response = vision_model.generate_content([prompt, image])
+    # Use the Flash model for vision as well to stay on the free tier
+    response = model.generate_content([prompt, image])
     return response.text
 
 # --- Streamlit User Interface (No changes needed here) ---
