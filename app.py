@@ -1,4 +1,4 @@
-# app.py (The Definitive Version with the Correct Flash Model for Vision)
+# app.py (The Definitive Version with All UI Modes Restored)
 
 import os
 import pandas as pd
@@ -29,9 +29,11 @@ def load_resources():
         st.error(f"Error configuring Google AI API: {e}")
         return None, None
 
+    # Load the single, powerful Gemini 1.5 Flash model for all tasks.
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
     print("✅ Gemini 1.5 Flash model loaded successfully.")
 
+    # Load the knowledge base
     try:
         dataframe = pd.read_csv("knowledge_base.csv")
         dataframe['embedding'] = dataframe['embedding'].apply(eval)
@@ -54,24 +56,29 @@ def find_relevant_passage(query, dataframe):
     return dataframe.iloc[best_passage_index]
 
 def answer_question_from_text(question, dataframe):
-    """Handles the text-based Q&A logic."""
-    relevant_page = find_relevant_passage(question, dataframe)
-    prompt = f"Answer the following question based ONLY on the provided source material.\n\nQuestion: {question}\n\nSource Material:\n{relevant_page['text_for_search']}"
+    """Handles the text-based Q&A logic with a refined persona."""
+    context = "\n\n---\n\n".join(find_relevant_passage(question, dataframe, k=3)['text_for_search'].tolist())
+    prompt = f"""
+    **Your Persona:** You are a friendly, cheerful, and patient AI Teacher...
+    **Your Task & Rules:** 1. Answer the user's question clearly... 2. Base your answer on the 'Source Material'... 3. **IMPORTANT:** Never refer to the source material directly...
+    ---
+    **Source Material:** {context}
+    ---
+    **User's Question:** {question}
+    """
     response = model.generate_content(prompt)
     return response.text
 
 def analyze_handwritten_image(image, instruction):
-    """Handles the image analysis logic."""
-    if image is None:
-        return "Please upload an image."
-    if not instruction:
-        return "Please provide an instruction for the image."
+    """Handles the image analysis logic with a focused task instruction."""
+    if image is None: return "Please upload an image."
+    if not instruction: return "Please provide an instruction for the image."
             
-    print(f"Received image and instruction: {instruction}")
-    # --- THIS IS THE CORRECTED LINE ---
-    # We now use the single, pre-loaded 'gemini-1.5-flash-latest' model,
-    # which is fully capable of vision tasks and respects the free tier.
-    prompt = f"You are an expert AI Teacher. Analyze the handwritten work in the image based on this instruction: \"{instruction}\""
+    prompt = f"""
+    You are an expert AI Math and Science Teacher. Your primary goal is to provide a step-by-step solution...
+    **CRITICAL RULE:** Provide ONLY the direct answer... DO NOT add any extra summary, critique, or concluding remarks...
+    **User's Instruction:** "{instruction}"
+    """
     response = model.generate_content([prompt, image])
     return response.text
 
@@ -80,11 +87,14 @@ st.title("🤖 AI Teacher Portal")
 
 with st.sidebar:
     st.header("App Mode")
+    # --- THIS IS THE CORRECTED WIDGET ---
+    # We now include all three modes as options.
     app_mode = st.radio(
         "Choose a feature:",
-        ("❓ Textbook Q&A", "✍️ Homework Helper")
+        ("❓ Textbook Q&A", "✍️ Homework Helper", "👩‍🏫 Teacher Lecture Mode")
     )
 
+# --- UI for Textbook Q&A Mode ---
 if app_mode == "❓ Textbook Q&A":
     st.header("Ask a Question from the Textbook")
     if model and df_embedded is not None and not df_embedded.empty:
@@ -100,6 +110,7 @@ if app_mode == "❓ Textbook Q&A":
     else:
         st.error("Application is not ready. Please check the logs or secrets.")
 
+# --- UI for Homework Helper Mode ---
 elif app_mode == "✍️ Homework Helper":
     st.header("Get Help with Your Homework")
     if model:
@@ -117,3 +128,8 @@ elif app_mode == "✍️ Homework Helper":
     else:
         st.error("Application is not ready. Please check the logs or secrets.")
 
+# --- UI for Teacher Lecture Mode (Placeholder) ---
+elif app_mode == "👩‍🏫 Teacher Lecture Mode":
+    st.header("Generate a Custom Audio Lecture")
+    st.info("This feature is currently under construction. We will build it out in the next step!")
+    st.write("When complete, you will be able to select a chapter and topic here to generate a full audio lecture.")
