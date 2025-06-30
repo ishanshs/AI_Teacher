@@ -1,4 +1,4 @@
-# app.py (The Definitive Version using Gemini 1.5 Flash for All Tasks)
+# app.py (The Definitive Version using a Single Gemini 1.5 Flash Model)
 
 import os
 import pandas as pd
@@ -18,7 +18,7 @@ st.set_page_config(
 @st.cache_resource
 def load_resources():
     """
-    This function configures the Google AI API, loads the generative model,
+    This function configures the API, loads the single Gemini 1.5 Flash model,
     and loads the knowledge base from the CSV file.
     """
     # Configure Google AI API
@@ -33,7 +33,7 @@ def load_resources():
         st.error(f"Error configuring Google AI API: {e}")
         return None, None
 
-    # Load the single, powerful Gemini 1.5 Flash model
+    # Load the single, powerful Gemini 1.5 Flash model for all tasks.
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
     print("✅ Gemini 1.5 Flash model loaded successfully.")
 
@@ -42,6 +42,7 @@ def load_resources():
         dataframe = pd.read_csv("knowledge_base.csv")
         dataframe['embedding'] = dataframe['embedding'].apply(eval)
         print("✅ Knowledge base loaded successfully.")
+        # Return the model and the dataframe.
         return model, dataframe
     except FileNotFoundError:
         st.error("CRITICAL ERROR: 'knowledge_base.csv' not found. App cannot function.")
@@ -63,20 +64,21 @@ def answer_question_from_text(question, dataframe):
     """Handles the text-based Q&A logic."""
     relevant_page = find_relevant_passage(question, dataframe)
     prompt = f"Answer the following question based ONLY on the provided source material.\n\nQuestion: {question}\n\nSource Material:\n{relevant_page['text_for_search']}"
-    # Use the pre-loaded Flash model
+    # Use the pre-loaded Flash model for fast text responses
     response = model.generate_content(prompt)
     return response.text
 
 def analyze_handwritten_image(image, instruction):
-    """Handles the image analysis logic."""
+    """Handles the image analysis logic using the pre-loaded Flash model."""
     if image is None:
         return "Please upload an image."
     if not instruction:
         return "Please provide an instruction for the image."
-
+            
     print(f"Received image and instruction: {instruction}")
-    # --- THIS IS THE CORRECTED LINE ---
-    # We use the same 'gemini-1.5-flash-latest' model for vision.
+    # --- THIS IS THE CORRECTED LOGIC ---
+    # We use the same 'gemini-1.5-flash-latest' model that we loaded at the start.
+    # It is multimodal and can handle both text and images.
     prompt = f"You are an expert AI Teacher. Analyze the handwritten work in the image based on this instruction: \"{instruction}\""
     response = model.generate_content([prompt, image])
     return response.text
@@ -96,7 +98,7 @@ if app_mode == "❓ Textbook Q&A":
     # Check if resources were loaded correctly before showing the UI
     if model and df_embedded is not None and not df_embedded.empty:
         text_question = st.text_area("Enter your question here:", height=150)
-
+        
         if st.button("Get Answer"):
             if text_question:
                 with st.spinner("The AI Teacher is thinking..."):
@@ -116,7 +118,7 @@ elif app_mode == "✍️ Homework Helper":
     if model:
         uploaded_file = st.file_uploader("Upload an image of your work", type=["png", "jpg", "jpeg"])
         instruction = st.text_input("What should I do with this image?", placeholder="e.g., 'Solve for x' or 'Check my work'")
-
+        
         if st.button("Analyze Image"):
             if uploaded_file is not None:
                 if instruction:
@@ -131,3 +133,4 @@ elif app_mode == "✍️ Homework Helper":
                 st.warning("Please upload an image.")
     else:
         st.error("Application is not ready. Please check the logs or secrets.")
+
