@@ -1,5 +1,7 @@
-# app.py (The Definitive, Sharable Version with All 3 Modes)
+# app.py (The Definitive, Sharable Version with All 3 Modes and Full Functionality)
 
+# --- Section 1: Import All Necessary Libraries ---
+# This section brings in all the tools we need for our application.
 import os
 import pandas as pd
 import numpy as np
@@ -10,22 +12,27 @@ from gtts import gTTS
 import json
 import re
 from num2words import num2words
+from google.api_core.exceptions import TooManyRequests
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
-# --- Page Configuration ---
+# --- Section 2: Page Configuration ---
+# This sets the title and icon that appear in the browser tab for a professional look.
 st.set_page_config(
     page_title="AI Teacher Portal",
     page_icon="🤖",
     layout="wide"
 )
 
-# --- Resource Loading (runs once and is cached) ---
+# --- Section 3: Resource Loading (Cached for Performance) ---
 # We only load the knowledge base at startup. The AI models will be initialized
-# on-demand using the user's provided API key.
+# on-demand using the user's provided API key. The @st.cache_resource decorator
+# ensures this file is only read from disk once.
 @st.cache_resource
 def load_knowledge_base():
     """Loads the knowledge base from the CSV file."""
     try:
         dataframe = pd.read_csv("knowledge_base.csv")
+        # The 'embedding' column is read as a string, so we must convert it back to a list of floats.
         dataframe['embedding'] = dataframe['embedding'].apply(eval)
         print("✅ Knowledge base loaded successfully.")
         return dataframe
@@ -34,87 +41,131 @@ def load_knowledge_base():
 
 df_embedded = load_knowledge_base()
 
-# --- Core Logic Functions (Adapted to use a user-provided API key) ---
 
-def configure_genai(api_key):
-    """Configures the Google AI SDK with the provided key."""
-    try:
-        genai.configure(api_key=api_key)
-        return True
-    except Exception as e:
-        st.error(f"Failed to configure API. Please ensure your key is valid. Error: {e}")
-        return False
+# --- Section 4: Core Logic Functions ---
+# This section contains all the backend functions that perform the AI tasks.
+# They are designed to be resilient and to accept the user's API key.
 
-def find_relevant_context(query, dataframe, api_key, k=3):
-    """Finds the top 'k' most relevant text chunks."""
-    configure_genai(api_key)
+# This function makes our API calls resilient to temporary rate limit errors.
+@retry(retry=retry_if_exception_type(TooManyRequests), wait=wait_fixed(60), stop=stop_after_attempt(3))
+def generate_content_with_retry(model, prompt):
+    """A resilient wrapper for the 'generate_content' API call."""
+    return model.generate_content(prompt)
+
+def get_model(api_key):
+    """Initializes and returns the Gemini 1.5 Flash model using the user's key."""
+    genai.configure(api_key=api_key)
+    return genai.GenerativeModel('gemini-1.5-flash-latest')
+
+def find_relevant_context(query, dataframe, k=3):
+    """Finds the top 'k' most relevant text chunks from the knowledge base."""
     query_embedding_response = genai.embed_content(model='models/text-embedding-004', content=query, task_type="RETRIEVAL_QUERY")
     query_embedding = query_embedding_response['embedding']
     dot_products = np.dot(np.stack(dataframe['embedding']), query_embedding)
     top_k_indices = np.argsort(dot_products)[-k:][::-1]
     return "\n\n---\n\n".join(dataframe.iloc[top_k_indices]['text_for_search'].tolist())
 
-def answer_question_from_text(question, dataframe, api_key):
-    """Handles the text-based Q&A logic."""
-    context = find_relevant_context(question, dataframe, api_key)
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
-    prompt = f"**Persona:** You are a friendly AI Teacher... **Task:** Answer the user's question... **Source Material:** {context} --- **Question:** {question}"
-    response = model.generate_content(prompt)
+def answer_question_from_text(question, dataframe, model):
+    """Handles the text-based Q&A logic with our refined persona."""
+    context = find_relevant_context(question, dataframe, k=5) # Use more context for better answers
+    prompt = f"""
+    **Persona:** You are a friendly, cheerful, and patient AI Teacher...
+    **Task & Rules:** 1. Answer the user's question clearly... 2. Base your answer on the 'Source Material'... 3. **IMPORTANT:** Never refer to the source material directly...
+    ---
+    **Source Material:** {context}
+    ---
+    **User's Question:** {question}
+    """
+    response = generate_content_with_retry(model, prompt)
     return response.text
 
-def analyze_handwritten_image(image, instruction, api_key):
-    """Handles the image analysis logic."""
-    configure_genai(api_key)
-    vision_model = genai.GenerativeModel('gemini-1.5-pro-latest')
-    prompt = f"You are an expert AI Math Teacher... **Rule:** Provide ONLY the step-by-step solution... **Instruction:** \"{instruction}\""
-    response = vision_model.generate_content([prompt, image])
+def analyze_handwritten_image(image, instruction, model):
+    """Handles the image analysis logic using the same Flash model."""
+    prompt = f"""
+    You are an expert AI Math Teacher... Your primary goal is to provide a step-by-step solution...
+    **CRITICAL RULE:** Provide ONLY the direct answer... DO NOT add any extra summary...
+    **User's Instruction:** "{instruction}"
+    """
+    response = generate_content_with_retry(model, [prompt, image])
     return response.text
+
+# --- These are the functions specifically for the Lecture Mode ---
 
 @st.cache_data
-def get_chapter_list(_dataframe, api_key):
-    """Generates ONLY a list of chapter names."""
+def get_chapter_list(_dataframe, model):
+    """Generates ONLY a list of chapter names for the selection menu."""
     st.write("📚 Analyzing textbook to identify chapters...")
-    configure_genai(api_key)
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
-    full_text_sample = "\n".join(_dataframe['text_for_search'].head(150).tolist())
-    prompt = f"Your ONLY job is to analyze the text and extract chapter titles. Output MUST be a single, valid JSON array of strings. TEXT TO ANALYZE: {full_text_sample}"
+    full_text_sample = "\n".join(_dataframe['text_for_search'].head(200).tolist())
+    prompt = f"Your ONLY job is to analyze the text and extract chapter titles. Output MUST be a single, valid JSON array of strings. PERFECT EXAMPLE: [\"Chapter 1: Integers\"]. TEXT TO ANALYZE: {full_text_sample}"
     try:
-        response = model.generate_content(prompt)
+        response = generate_content_with_retry(model, prompt)
         cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
         return json.loads(cleaned_response, strict=False)
     except Exception as e:
         return {"error": f"Failed to generate or parse chapter list. Details: {str(e)}"}
 
 @st.cache_data
-def get_topic_list(chapter_name, _dataframe, api_key):
+def get_topic_list(chapter_name, _dataframe, model):
     """Generates a list of topics ONLY for the selected chapter."""
     st.write(f" B Analyzing '{chapter_name}' to find its main topics...")
-    configure_genai(api_key)
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
-    source_material = find_relevant_context(chapter_name, _dataframe, api_key, k=10)
+    source_material = find_relevant_context(chapter_name, _dataframe, k=10)
     prompt = f"You are a curriculum expert. Analyze the source material for '{chapter_name}'. List the main topics. Output MUST be a single, valid JSON array. SOURCE: {source_material}"
     try:
-        response = model.generate_content(prompt)
+        response = generate_content_with_retry(model, prompt)
         cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
         return json.loads(cleaned_response, strict=False)
     except Exception as e:
         return {"error": f"Failed to generate or parse topics. Details: {str(e)}"}
 
-# ... (Placeholders for other lecture functions - can be filled later) ...
-def generate_lecture_script(topic, source_material, api_key):
-    st.info("Script generation is a placeholder in this version.")
-    return [{"display_text": f"This is a placeholder script for the topic: {topic}"}]
-def convert_script_to_audio(script_parts, folder):
-    st.info("Audio generation is a placeholder in this version.")
-    return []
-def deliver_grouped_lecture(script, audio, size):
-    st.success("Lecture script generated! Audio playback is the next step.")
-    for part in script:
+def generate_lecture_script(topic, source_material, model):
+    """Uses Gemini to create a lecture script with formula placeholders."""
+    prompt = f"You have two jobs... PERSONA: You are a friendly AI Teacher... TASK: Create a lecture script... PERFECT EXAMPLE: [{{'spoken_text': 'Let's solve <FORMULA:2x-3=5>', 'display_text': 'Example: 2x-3=5'}}]... SOURCE MATERIAL: {source_material}"
+    try:
+        response = generate_content_with_retry(model, [prompt])
+        raw_text = response.text.strip().replace("```json", "").replace("```", "")
+        return json.loads(raw_text, strict=False)
+    except Exception as e:
+        print(f"❌ An error occurred during script generation: {e}")
+        return None
+
+def verbalize_formula(formula):
+    """Programmatically converts a formula string into a verbal explanation."""
+    pronunciation_map = {'+': ' plus ', '-': ' minus ', 'x': ' times ', '*': ' times ', '/': ' divided by ', '=': ' equals '}
+    tokens = re.findall(r'(\d+\.?\d*|[a-zA-Z]+|.)', formula)
+    verbalized_tokens = [num2words(float(t)) if t.replace('.', '', 1).isdigit() else pronunciation_map.get(t, f' {t} ') for t in tokens]
+    return ' '.join(verbalized_tokens).strip().replace('  ', ' ')
+
+def convert_script_to_audio(script_parts, lecture_audio_folder):
+    """Converts 'spoken_text' into MP3 files, processing formula placeholders."""
+    os.makedirs(lecture_audio_folder, exist_ok=True)
+    audio_files = []
+    for i, part in enumerate(script_parts):
+        text_to_speak = part['spoken_text']
+        placeholders = re.findall(r'<FORMULA:(.*?)>', text_to_speak)
+        for formula in placeholders:
+            text_to_speak = text_to_speak.replace(f'<FORMULA:{formula}>', verbalize_formula(formula))
+        tts = gTTS(text=text_to_speak, lang='en', tld='co.in', slow=False)
+        file_path = os.path.join(lecture_audio_folder, f"part_{i}.mp3")
+        tts.save(file_path)
+        audio_files.append(file_path)
+    return audio_files
+
+def deliver_grouped_lecture(script_parts, audio_files):
+    """Delivers the lecture in digestible, manually-playable parts."""
+    st.success("Your lecture is ready! Press play on each part to listen.")
+    for i, part in enumerate(script_parts):
         st.markdown("---")
-        st.write(f"**Display Note:** {part['display_text']}")
+        st.write(f"**Note:** {part['display_text']}")
+        if i < len(audio_files):
+            st.audio(audio_files[i])
+    st.markdown("---")
+    st.balloons()
+    st.success("🎉 End of Lecture! Great job!")
 
 
-# --- Streamlit User Interface ---
+# --- Section 5: Streamlit User Interface ---
+# This section creates all the visual elements of your web app.
+
 st.title("🤖 AI Teacher Portal")
 
 with st.sidebar:
@@ -128,6 +179,7 @@ with st.sidebar:
         ("❓ Textbook Q&A", "✍️ Homework Helper", "👩‍🏫 Teacher Lecture Mode")
     )
 
+# Master safety check to ensure resources are available before building the UI.
 if df_embedded is None:
     st.error("CRITICAL ERROR: 'knowledge_base.csv' not found. Application cannot start.")
     st.stop()
@@ -135,18 +187,26 @@ elif not api_key_input:
     st.info("👋 Welcome! Please enter your Google AI API Key in the sidebar to activate the AI Teacher.")
     st.stop()
 else:
-    # If we have the dataframe and an API key, build the selected UI mode.
+    # If we have the dataframe and an API key, initialize the model and build the UI.
+    try:
+        model = get_model(api_key_input)
+    except Exception as e:
+        st.error("Failed to initialize the AI model. Please check your API key.")
+        st.stop()
+    
+    # --- UI for Textbook Q&A Mode ---
     if app_mode == "❓ Textbook Q&A":
         st.header("Ask a Question from the Textbook")
         text_question = st.text_area("Enter your question here:", height=150)
         if st.button("Get Answer"):
             if text_question:
                 with st.spinner("The AI Teacher is thinking..."):
-                    response = answer_question_from_text(text_question, df_embedded, api_key_input)
+                    response = answer_question_from_text(text_question, df_embedded, model)
                     st.success("Here is your answer:")
                     st.write(response)
             else: st.warning("Please enter a question.")
     
+    # --- UI for Homework Helper Mode ---
     elif app_mode == "✍️ Homework Helper":
         st.header("Get Help with Your Homework")
         uploaded_file = st.file_uploader("Upload an image of your work", type=["png", "jpg", "jpeg"])
@@ -155,14 +215,15 @@ else:
             if uploaded_file and instruction:
                 with st.spinner("The AI Teacher is analyzing your image..."):
                     image = Image.open(uploaded_file)
-                    response = analyze_handwritten_image(image, instruction, api_key_input)
+                    response = analyze_handwritten_image(image, instruction, model)
                     st.success("Here is the analysis:")
                     st.write(response)
             else: st.warning("Please upload an image and provide an instruction.")
 
+    # --- UI for Teacher Lecture Mode ---
     elif app_mode == "👩‍🏫 Teacher Lecture Mode":
         st.header("Generate a Custom Audio Lecture")
-        chapters = get_chapter_list(df_embedded, api_key_input)
+        chapters = get_chapter_list(df_embedded, model)
         
         if isinstance(chapters, dict) and "error" in chapters:
             st.error(f"An error occurred while loading chapters:\n\n{chapters['error']}")
@@ -171,7 +232,7 @@ else:
         else:
             selected_chapter = st.selectbox("Step 1: Choose a Chapter", options=chapters)
             if selected_chapter:
-                topics = get_topic_list(selected_chapter, df_embedded, api_key_input)
+                topics = get_topic_list(selected_chapter, df_embedded, model)
                 if isinstance(topics, dict) and "error" in topics:
                     st.error(f"An error occurred while loading topics:\n\n{topics['error']}")
                 elif not topics:
@@ -182,12 +243,18 @@ else:
                         if selected_topic:
                             with st.status(f"Preparing lecture on '{selected_topic}'...", expanded=True) as status:
                                 status.write("Gathering relevant material...")
-                                source_material = find_relevant_context(selected_topic, df_embedded, api_key_input, k=10)
+                                source_material = find_relevant_context(selected_topic, df_embedded, k=10)
+                                
                                 status.write("✍️ Writing the lecture script...")
-                                lecture_script = generate_lecture_script(selected_topic, source_material, api_key_input)
+                                lecture_script = generate_lecture_script(selected_topic, source_material, model)
+                                
                                 if lecture_script:
-                                    status.update(label="Lecture Ready!", state="complete")
-                                    deliver_grouped_lecture(lecture_script, [], 3) # Audio part is placeholder for now
+                                    status.write("🎙️ Creating audio files for the lecture...")
+                                    lecture_asset_path = f"Lecture_Assets/{selected_topic.replace(' ', '_')}"
+                                    audio_files = convert_script_to_audio(lecture_script, lecture_asset_path)
+                                    status.update(label="Lecture ready!", state="complete", expanded=False)
+                                    
+                                    deliver_grouped_lecture(lecture_script, audio_files)
                                 else:
                                     status.update(label="Error!", state="error")
                                     st.error("Could not generate the lecture script.")
