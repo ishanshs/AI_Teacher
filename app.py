@@ -116,7 +116,7 @@ with st.sidebar:
     app_mode = st.radio("Choose a feature:", ("❓ Textbook Q&A", "✍️ Homework Helper"))
 
 if app_mode == "❓ Textbook Q&A":
-    st.header("Ask a Question from the Textbook")
+    st.header("Ask a Question from the Textbook: Class 7 NCERT Only")
     if model and df_embedded is not None and not df_embedded.empty:
         text_question = st.text_area("Enter your question here:", height=150)
         if st.button("Get Answer"):
@@ -131,7 +131,7 @@ if app_mode == "❓ Textbook Q&A":
         st.error("Application is not ready. Please check the logs or secrets.")
 
 elif app_mode == "✍️ Homework Helper":
-    st.header("Get Help with Your Homework")
+    st.header("Get Help with Your Homework: Class 7 NCERT Only")
     if model:
         uploaded_file = st.file_uploader("Upload an image of your work", type=["png", "jpg", "jpeg"])
         instruction = st.text_input("What should I do with this image?", placeholder="e.g., 'Solve for x' or 'Check my work'")
