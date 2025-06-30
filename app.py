@@ -1,4 +1,4 @@
-# app.py (The Definitive, Sharable, Fully-Functional Version)
+# app.py (The Definitive, Polished, and Sharable Version)
 
 # --- Section 1: Import All Necessary Libraries ---
 import os
@@ -13,7 +13,7 @@ import re
 from num2words import num2words
 from google.api_core.exceptions import TooManyRequests, ResourceExhausted
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
-import tempfile # Import the tempfile library
+import tempfile
 
 # --- Section 2: Page Configuration ---
 st.set_page_config(
@@ -37,7 +37,6 @@ def load_knowledge_base():
 df_embedded = load_knowledge_base()
 
 # --- Section 4: Core Logic Functions ---
-# All functions are designed to receive a configured 'model' object.
 
 @retry(retry=retry_if_exception_type((TooManyRequests, ResourceExhausted)), wait=wait_fixed(60), stop=stop_after_attempt(3))
 def generate_content_with_retry(model, prompt):
@@ -57,17 +56,15 @@ def answer_question_from_text(question, dataframe, model):
     context = find_relevant_context(question, dataframe)
     prompt = f"""
     **Persona:**
-    You are a friendly, cheerful, and patient AI Teacher. Imagine you are an older, knowledgeable family member explaining a concept simply and encouragingly.
+    You are a friendly, cheerful, and patient AI Teacher...
     **Task & Rules:**
-    1. Your primary task is to answer the user's question clearly and conversationally.
-    2. You MUST base your answer strictly on the provided 'Source Material'.
+    1. Answer the user's question clearly and conversationally.
+    2. Base your answer strictly on the provided 'Source Material'.
     3. **IMPORTANT:** Never refer to the source material directly. Answer naturally as if the knowledge is your own.
     ---
-    **Source Material:**
-    {context}
+    **Source Material:** {context}
     ---
-    **User's Question:**
-    {question}
+    **User's Question:** {question}
     """
     response = generate_content_with_retry(model, prompt)
     return response.text
@@ -75,26 +72,21 @@ def answer_question_from_text(question, dataframe, model):
 def analyze_handwritten_image(image, instruction, model):
     """Handles the image analysis logic with the specific step-by-step prompt."""
     prompt = f"""
-    You are an expert AI Math Teacher. Your task is to follow the user's instruction precisely based on the provided image.
+    You are an expert AI Math Teacher. Your task is to follow the user's instruction precisely.
     **CRITICAL RULES:**
-    1.  **Show Your Work:** Your primary goal is to provide a detailed, step-by-step derivation of the solution.
+    1.  **Show Your Work:** Provide a detailed, step-by-step derivation of the solution.
     2.  **Accuracy First:** Double-check your mathematical reasoning.
     3.  **Be Direct:** Provide ONLY the step-by-step solution.
     **PERFECT EXAMPLE OF OUTPUT:**
     Of course! Here is the step-by-step solution:
-    Step 1: First, I will rearrange the first equation to solve for y.
-    Given: 2x + y = 5
-    y = 5 - 2x
-    Step 2: Now, I will substitute this expression for y into the second equation.
-    Given: 3x - 2y = 4
-    3x - 2(5 - 2x) = 4
-    Step 3: I will now solve for x.
-    3x - 10 + 4x = 4
-    7x = 14
-    x = 2
-    Step 4: Finally, I will substitute the value of x back into the expression for y.
-    y = 5 - 2(2)
-    y = 1
+    Step 1: Rearrange the first equation to solve for y.
+    Given: 2x + y = 5 -> y = 5 - 2x
+    Step 2: Substitute this expression for y into the second equation.
+    Given: 3x - 2y = 4 -> 3x - 2(5 - 2x) = 4
+    Step 3: Solve for x.
+    3x - 10 + 4x = 4 -> 7x = 14 -> x = 2
+    Step 4: Substitute the value of x back to find y.
+    y = 5 - 2(2) -> y = 1
     **Final Answer:** The solution is x = 2 and y = 1.
     ---
     **User's Instruction:** "{instruction}"
@@ -106,14 +98,12 @@ def analyze_handwritten_image(image, instruction, model):
 
 @st.cache_data
 def get_chapter_list(_dataframe, _model):
-    """Generates an ordered list of chapter names for the selection menu."""
+    """Generates an ordered list of chapter names using the contrastive prompt."""
     st.write("📚 Analyzing textbook to identify chapters...")
     full_text_sample = "\n".join(_dataframe['text_for_search'].head(200).tolist())
-    # This prompt now uses the "Contrastive" technique to be more precise.
     prompt = f"""
     You are a data extraction expert. Your only task is to analyze the provided text and extract the high-level chapter titles in the correct sequence.
-    - A 'Chapter' is a major section like "Chapter 1: Integers" or "Chapter 5: Lines and Angles".
-    - A 'Chapter' is NOT a smaller topic like "Properties of Addition" or "Adjacent Angles".
+    - A 'Chapter' is a major section like "Chapter 1: Integers". It is NOT a smaller topic like "Properties of Addition".
     - Your output MUST be a single, valid JSON array of strings. Do NOT add any text before or after the JSON array.
     TEXT TO ANALYZE: {full_text_sample}
     """
@@ -126,13 +116,12 @@ def get_chapter_list(_dataframe, _model):
 
 @st.cache_data
 def get_topic_list(chapter_name, _dataframe, _model):
-    """Generates a list of topics ONLY for the selected chapter."""
+    """Generates a list of topics for the selected chapter using a contrastive prompt."""
     st.write(f" B Analyzing '{chapter_name}' to find its main topics...")
     source_material = find_relevant_context(chapter_name, _dataframe, k=10)
     prompt = f"""
     You are a curriculum expert. Analyze the source material for '{chapter_name}'. List the main topics covered in this specific chapter.
-    - A 'Topic' is a main idea within a chapter, like 'Properties of Addition' or 'Solving Equations'.
-    - It is NOT a tiny sub-topic or a single definition like 'What is an integer?'.
+    - A 'Topic' is a main idea within a chapter, like 'Properties of Addition'. It is NOT a tiny sub-topic or a single definition like 'What is an integer?'.
     - Your output MUST be a single, valid JSON array of strings.
     SOURCE: {source_material}
     """
@@ -143,22 +132,42 @@ def get_topic_list(chapter_name, _dataframe, _model):
     except Exception as e:
         return {"error": f"Failed to generate or parse topics. Details: {str(e)}"}
 
+# --- NEW: This function validates the AI's output to prevent crashes ---
+def validate_and_clean_script(raw_script):
+    """
+    Validates the structure of the lecture script from the AI.
+    It ensures each part has the required keys before being used.
+    """
+    if not isinstance(raw_script, list):
+        return []
+    
+    validated_script = []
+    for part in raw_script:
+        if isinstance(part, dict) and 'spoken_text' in part and 'display_text' in part:
+            validated_script.append(part)
+        else:
+            print(f"⚠️ Discarding malformed script part: {part}")
+            
+    return validated_script
+
 def generate_lecture_script(topic, source_material, model):
-    """Uses Gemini to create a lecture script with formula placeholders."""
+    """Uses Gemini to create a lecture script, which is then validated."""
     print(f"✍️ Generating lecture script for '{topic}'...")
     prompt = f"""
     You have two jobs. First, adopt a persona. Second, complete a task.
     **PERSONA:** You are a friendly, enthusiastic AI Teacher...
     **TASK:** Create a lecture script... Your output MUST be a single, valid JSON array...
     **CRITICAL RULES:**
-    1.  **Formula Placeholder:** When you need to say a formula, use the format `<FORMULA:your_formula_here>`.
+    1.  **Formula Placeholder:** Use the format `<FORMULA:your_formula_here>`.
     2.  **Synchronized Examples:** If you use a `<FORMULA:...>` placeholder, the formula inside MUST be written in the 'display_text'.
     SOURCE MATERIAL: {source_material}
     """
     try:
         response = generate_content_with_retry(model, prompt)
         raw_text = response.text.strip().replace("```json", "").replace("```", "")
-        return json.loads(raw_text, strict=False)
+        raw_script = json.loads(raw_text, strict=False)
+        # We now pass the raw script through our validation function.
+        return validate_and_clean_script(raw_script)
     except Exception as e:
         print(f"❌ An error occurred during script generation: {e}")
         return None
@@ -173,21 +182,20 @@ def verbalize_formula(formula):
 def convert_script_to_audio(script_parts, lecture_audio_folder):
     """Converts 'spoken_text' into MP3 files, with robust error handling."""
     print("🎙️ Converting script to audio files...")
-    # This function now correctly creates the directory in the approved /tmp/ location.
     os.makedirs(lecture_audio_folder, exist_ok=True)
     audio_files = []
     for i, part in enumerate(script_parts):
         try:
             text_to_speak = part['spoken_text']
-            placeholders = re.findall(r'<FORMULA:(.*?)>', text_to_speak)
-            for formula in placeholders:
-                text_to_speak = text_to_speak.replace(f'<FORMULA:{formula}>', verbalize_formula(formula))
-            
             if not text_to_speak.strip():
                 print(f"⚠️ Skipping audio generation for part {i} because text is empty.")
                 audio_files.append(None)
                 continue
-
+            
+            placeholders = re.findall(r'<FORMULA:(.*?)>', text_to_speak)
+            for formula in placeholders:
+                text_to_speak = text_to_speak.replace(f'<FORMULA:{formula}>', verbalize_formula(formula))
+            
             tts = gTTS(text=text_to_speak, lang='en', tld='co.in', slow=False)
             file_path = os.path.join(lecture_audio_folder, f"part_{i}.mp3")
             tts.save(file_path)
@@ -210,7 +218,6 @@ def deliver_grouped_lecture(script_parts, audio_files):
     st.markdown("---")
     st.balloons()
     st.success("🎉 End of Lecture! Great job!")
-
 
 # --- Section 5: Streamlit User Interface ---
 st.title("🤖 AI Teacher Portal")
@@ -237,7 +244,8 @@ else:
     
     if app_mode == "❓ Textbook Q&A":
         st.header("Ask a Question from the Textbook")
-        text_question = st.text_area("Enter your question here:", height=150)
+        # Added a unique key to fix the UI "ghosting" effect.
+        text_question = st.text_area("Enter your question here:", height=150, key="qna_input")
         if st.button("Get Answer"):
             if text_question:
                 with st.spinner("The AI Teacher is thinking..."):
@@ -248,7 +256,8 @@ else:
     
     elif app_mode == "✍️ Homework Helper":
         st.header("Get Help with Your Homework")
-        uploaded_file = st.file_uploader("Upload an image of your work", type=["png", "jpg", "jpeg"])
+        # Added a unique key to fix the UI "ghosting" effect.
+        uploaded_file = st.file_uploader("Upload an image of your work", type=["png", "jpg", "jpeg"], key="homework_input")
         instruction = st.text_input("What should I do with this image?", placeholder="e.g., 'Solve these equations for x and y'")
         if st.button("Analyze Image"):
             if uploaded_file and instruction:
@@ -286,12 +295,11 @@ else:
                                 lecture_script = generate_lecture_script(selected_topic, source_material, model)
                                 if lecture_script:
                                     status.write("🎙️ Creating audio files...")
-                                    # This is the corrected line that uses a temporary directory.
                                     lecture_asset_path = os.path.join(tempfile.gettempdir(), f"Lecture_Assets_{selected_topic.replace(' ', '_')}")
                                     audio_files = convert_script_to_audio(lecture_script, lecture_asset_path)
                                     status.update(label="Lecture ready!", state="complete", expanded=False)
                                     deliver_grouped_lecture(lecture_script, audio_files)
                                 else:
                                     status.update(label="Error!", state="error")
-                                    st.error("Could not generate the lecture script.")
+                                    st.error("Could not generate the lecture script. The AI may have returned an unexpected format.")
                         else: st.warning("Please select a topic.")
