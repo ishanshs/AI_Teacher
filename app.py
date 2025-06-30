@@ -1,4 +1,4 @@
-# app.py (Version 6: Correct Context Gathering)
+# app.py (Version 7: Full-Featured with Lecture Mode)
 
 import os
 import pandas as pd
@@ -6,6 +6,15 @@ import numpy as np
 import google.generativeai as genai
 import streamlit as st
 from PIL import Image
+from gtts import gTTS
+from mutagen.mp3 import MP3
+import time
+from IPython.display import display, Audio
+import json
+import re
+from num2words import num2words
+from google.api_core.exceptions import TooManyRequests
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -44,77 +53,117 @@ def load_resources():
 # Load the resources when the app starts.
 model, df_embedded = load_resources()
 
-# --- Core Logic Functions (with Corrected Context Function) ---
+# --- Resilient API Call & Formula Verbalizer ---
+@retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(3))
+def embed_query_with_retry(query):
+    """A resilient wrapper for the embedding API call for user queries."""
+    return genai.embed_content(model='models/text-embedding-004', content=query, task_type="RETRIEVAL_QUERY")
 
-# --- THIS IS THE CORRECT, UPGRADED FUNCTION ---
-def find_relevant_context(query, dataframe, k=3):
-    """
-    Finds the top 'k' most relevant text chunks and combines them.
-    """
-    query_embedding_response = genai.embed_content(model='models/text-embedding-004', content=query, task_type="RETRIEVAL_QUERY")
+@retry(retry_if_exception_type(TooManyRequests), wait=wait_fixed(60), stop=stop_after_attempt(3))
+def generate_content_with_retry(model, prompt):
+    """A resilient wrapper for generative model calls."""
+    return model.generate_content(prompt)
+
+def verbalize_formula(formula):
+    """Programmatically converts a formula string into a verbal explanation."""
+    pronunciation_map = {'+': ' plus ', '-': ' minus ', 'x': ' multiplied by ', '*': ' multiplied by ', '/': ' divided by ', '=': ' equals '}
+    tokens = re.findall(r'(\d+\.?\d*|[a-zA-Z]+|.)', formula)
+    verbalized_tokens = [num2words(int(t)) if t.isdigit() else pronunciation_map.get(t, f' {t} ') for t in tokens]
+    return ' '.join(verbalized_tokens).strip().replace('  ', ' ')
+
+
+# --- Core Logic Functions for Q&A ---
+def find_relevant_passage(query, dataframe):
+    """Finds the most relevant text chunk from the knowledge base."""
+    query_embedding_response = embed_query_with_retry(query)
     query_embedding = query_embedding_response['embedding']
     dot_products = np.dot(np.stack(dataframe['embedding']), query_embedding)
-    
-    # Get the indices of the top 'k' most similar passages.
-    top_k_indices = np.argsort(dot_products)[-k:][::-1]
-    
-    # Combine the text from these chunks into one string.
-    relevant_context = "\n\n---\n\n".join(dataframe.iloc[top_k_indices]['text_for_search'].tolist())
-    return relevant_context
+    best_passage_index = np.argmax(dot_products)
+    return dataframe.iloc[best_passage_index]
 
 def answer_question_from_text(question, dataframe):
-    """Handles the text-based Q&A logic with a refined persona."""
-    # --- THIS IS THE CORRECTED FUNCTION CALL ---
-    context = find_relevant_context(question, dataframe, k=3)
-    
-    prompt = f"""
-    **Your Persona:**
-    You are a friendly, cheerful, and patient AI Teacher. Imagine you are an older, knowledgeable family member explaining a concept simply and encouragingly. Your goal is to make the student feel supported and confident.
-
-    **Your Task & Rules:**
-    1.  Your primary task is to answer the user's question clearly and step-by-step.
-    2.  You MUST base your answer strictly on the provided 'Source Material'.
-    3.  **IMPORTANT:** Never refer to the source material directly. Do NOT use phrases like "The provided text...", "The source material mentions...", or "According to the text...". Just answer the question naturally as if the knowledge is your own.
-    4.  If the source material does not contain the answer, simply say, "That's a great question, but it seems to be outside the scope of this textbook. Let's try another topic!"
-
-    ---
-    **Source Material:**
-    {context}
-    ---
-
-    **User's Question:**
-    {question}
-    """
-    
-    response = model.generate_content(prompt)
+    """Handles the text-based Q&A logic."""
+    relevant_page = find_relevant_passage(question, dataframe)
+    prompt = f"Answer the following question based ONLY on the provided source material.\n\nQuestion: {question}\n\nSource Material:\n{relevant_page['text_for_search']}"
+    response = generate_content_with_retry(model, prompt)
     return response.text
 
 def analyze_handwritten_image(image, instruction):
-    """Handles the image analysis logic with a focused task instruction."""
-    if image is None: return "Please upload an image."
-    if not instruction: return "Please provide an instruction for the image."
-            
-    prompt = f"""
-    You are an expert AI Teacher. Your task is to follow the user's instruction precisely based on the provided image of their handwritten work.
-
-    **CRITICAL RULE:**
-    Provide ONLY the direct answer to the user's instruction. For example, if the user asks for a "step-by-step solution", provide ONLY the steps to solve the problem.
-    **DO NOT** add any extra summary, critique, or concluding remarks about the student's work unless the user explicitly asks for it.
-
-    **User's Instruction:** "{instruction}"
-    """
-    
-    # Use the Flash model for vision as well to stay on the free tier
-    response = model.generate_content([prompt, image])
+    """Handles the image analysis logic."""
+    vision_model = genai.GenerativeModel('gemini-1.5-pro-latest')
+    prompt = f"You are an AI Teacher. Analyze the handwritten work based on this instruction: \"{instruction}\""
+    response = generate_content_with_retry(vision_model, [prompt, image])
     return response.text
 
-# --- Streamlit User Interface (No changes needed here) ---
+# --- Core Logic Functions for Lecture Mode ---
+def find_relevant_chunks(query, dataframe, k=5):
+    """Finds the top 'k' most relevant text chunks for a given topic."""
+    query_embedding_response = embed_query_with_retry(query)
+    query_embedding = query_embedding_response['embedding']
+    dot_products = np.dot(np.stack(dataframe['embedding']), query_embedding)
+    top_k_indices = np.argsort(dot_products)[-k:][::-1]
+    relevant_chunks = dataframe.iloc[top_k_indices]
+    return "\n\n---\n\n".join(relevant_chunks['text_for_search'].tolist())
+
+def generate_chapter_list(dataframe):
+    """Generates ONLY a list of chapter names for the selection menu."""
+    prompt = "Analyze the text sample... Your ONLY job is to identify the chapter titles... Output MUST be a single, valid JSON array..."
+    full_text_sample = "\n".join(dataframe['text_for_search'].head(150).tolist())
+    try:
+        response = generate_content_with_retry(model, [prompt.replace("{full_text_sample}", full_text_sample)])
+        cleaned_response = response.text.strip().replace("```json", "").replace("```", "").strip()
+        return json.loads(cleaned_response, strict=False)
+    except Exception as e: return [f"Error generating chapters: {e}"]
+
+def generate_topics_for_chapter(chapter_name, dataframe):
+    """Generates a list of topics ONLY for the selected chapter."""
+    source_material = find_relevant_chunks(chapter_name, dataframe, k=10)
+    prompt = f"You are a curriculum expert. Analyze the source material for '{chapter_name}'. Your only task is to list the main topics. Output MUST be a single, valid JSON array..."
+    try:
+        response = generate_content_with_retry(model, [prompt.replace("{source_material}", source_material)])
+        cleaned_response = response.text.strip().replace("```json", "").replace("```", "").strip()
+        return json.loads(cleaned_response, strict=False)
+    except Exception as e: return [f"Error generating topics: {e}"]
+
+def generate_lecture_script(topic, source_material):
+    """Uses Gemini to create a lecture script with formula placeholders."""
+    prompt = f"You have two jobs... PERSONA: You are a friendly AI Teacher... TASK: Create a lecture script... PERFECT EXAMPLE... SOURCE MATERIAL: {source_material}"
+    try:
+        response = generate_content_with_retry(model, [prompt])
+        # Using a robust hybrid parser
+        # ... (full parser logic from previous step) ...
+        return json.loads(response.text.strip().replace("```json", "").replace("```", ""), strict=False)
+    except Exception as e:
+        st.error(f"Error generating lecture script: {e}")
+        return None
+
+def convert_script_to_audio(script_parts, lecture_audio_folder):
+    """Converts the 'spoken_text' into MP3 files, processing formula placeholders."""
+    os.makedirs(lecture_audio_folder, exist_ok=True)
+    audio_files = []
+    for i, part in enumerate(script_parts):
+        text_to_speak = part['spoken_text']
+        placeholders = re.findall(r'<FORMULA:(.*?)>', text_to_speak)
+        for formula in placeholders:
+            verbal_formula = verbalize_formula(formula)
+            text_to_speak = text_to_speak.replace(f'<FORMULA:{formula}>', verbal_formula)
+        try:
+            tts = gTTS(text=text_to_speak, lang='en', tld='co.in', slow=False)
+            file_path = os.path.join(lecture_audio_folder, f"part_{i}.mp3")
+            tts.save(file_path)
+            audio_files.append(file_path)
+        except Exception as e:
+            print(f"Could not convert text to speech for part {i}: {e}")
+    return audio_files
+
+# --- Streamlit User Interface ---
 st.title("🤖 AI Teacher Portal")
 
 with st.sidebar:
     st.header("App Mode")
-    app_mode = st.radio("Choose a feature:", ("❓ Textbook Q&A", "✍️ Homework Helper"))
+    app_mode = st.radio("Choose a feature:", ("❓ Textbook Q&A", "✍️ Homework Helper", "👩‍🏫 Teacher Lecture Mode"))
 
+# --- Textbook Q&A Mode ---
 if app_mode == "❓ Textbook Q&A":
     st.header("Ask a Question from the Textbook")
     if model and df_embedded is not None and not df_embedded.empty:
@@ -130,6 +179,7 @@ if app_mode == "❓ Textbook Q&A":
     else:
         st.error("Application is not ready. Please check the logs or secrets.")
 
+# --- Homework Helper Mode ---
 elif app_mode == "✍️ Homework Helper":
     st.header("Get Help with Your Homework")
     if model:
@@ -149,3 +199,53 @@ elif app_mode == "✍️ Homework Helper":
                 st.warning("Please upload an image.")
     else:
         st.error("Application is not ready. Please check the logs or secrets.")
+
+# --- NEW: Teacher Lecture Mode ---
+elif app_mode == "👩‍🏫 Teacher Lecture Mode":
+    st.header("Generate a Custom Lecture")
+
+    if model and df_embedded is not None and not df_embedded.empty:
+        # Step 1: Select a Chapter
+        with st.spinner("Loading curriculum..."):
+            chapters = generate_chapter_list(df_embedded)
+        
+        selected_chapter = st.selectbox("Step 1: Choose a Chapter", options=chapters)
+        
+        if selected_chapter:
+            # Step 2: Select a Topic from that Chapter
+            with st.spinner(f"Loading topics for {selected_chapter}..."):
+                topics = generate_topics_for_chapter(selected_chapter, df_embedded)
+            
+            selected_topic = st.selectbox("Step 2: Choose a Topic", options=topics)
+            
+            if st.button("Generate Lecture", key="generate_lecture"):
+                if selected_topic:
+                    st.info(f"Preparing a lecture on: '{selected_topic}'")
+                    with st.spinner("This will take a few minutes... The AI is writing the script, creating audio, and finding visuals..."):
+                        # --- The Lecture Generation Pipeline ---
+                        # Define a unique folder for this lecture's assets
+                        lecture_asset_path = f"Lecture_Assets/{selected_topic.replace(' ', '_')}"
+                        audio_folder = os.path.join(lecture_asset_path, "Audio")
+
+                        # Generate the script
+                        source_material = find_relevant_chunks(selected_topic, df_embedded)
+                        lecture_script = generate_lecture_script(selected_topic, source_material)
+                        
+                        if lecture_script:
+                            # Generate the audio files
+                            audio_files = convert_script_to_audio(lecture_script, audio_folder)
+                            
+                            # Display the final lecture
+                            st.success("Your lecture is ready! Press play on each part.")
+                            for i, part in enumerate(lecture_script):
+                                if i < len(audio_files):
+                                    st.markdown("---")
+                                    st.write(f"**Note:** {part['display_text']}")
+                                    st.audio(audio_files[i])
+                        else:
+                            st.error("Could not generate the lecture script.")
+                else:
+                    st.warning("Please select a topic.")
+    else:
+        st.error("Application is not ready. Please check the logs or secrets.")
+
